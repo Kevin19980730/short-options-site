@@ -59,8 +59,9 @@ td{font-variant-numeric:tabular-nums}
 .nm{color:var(--muted);font-size:11px;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:block}
 .up{color:var(--up)} .dn{color:var(--dn)} .mut{color:var(--muted)}
 .chip{display:inline-block;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;margin-right:3px;background:var(--chip)}
-.chip.BIG{background:#e9ddff;color:#4b2a9a} .chip.STREAK{background:#dcecff;color:#164f99} .chip.RUN{background:#ffe7cc;color:#8a4a00}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip.BIG{background:#3a2d5c;color:#d4c2ff}:root:not([data-theme="light"]) .chip.STREAK{background:#1d3553;color:#b8d6ff}:root:not([data-theme="light"]) .chip.RUN{background:#4a3115;color:#ffd19c}}
+.chip.BIG{background:#e9ddff;color:#4b2a9a} .chip.STREAK{background:#dcecff;color:#164f99} .chip.RUN{background:#ffe7cc;color:#8a4a00} .chip.HOLD{background:#d9f2e3;color:#14603a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip.BIG{background:#3a2d5c;color:#d4c2ff}:root:not([data-theme="light"]) .chip.STREAK{background:#1d3553;color:#b8d6ff}:root:not([data-theme="light"]) .chip.RUN{background:#4a3115;color:#ffd19c}:root:not([data-theme="light"]) .chip.HOLD{background:#173a28;color:#a6e6c3}}
+:root[data-theme="dark"] .chip.HOLD{background:#173a28;color:#a6e6c3}
 .badge{display:inline-block;border-radius:4px;padding:1px 5px;font-size:11px}
 .badge.warn{background:var(--badbg);color:var(--dn);font-weight:600}
 .badge.info{background:var(--chip);color:var(--muted)}
@@ -116,10 +117,15 @@ svg.spark{vertical-align:middle}
       <label>&ge; &sigma;<input type="number" step="0.1" id="run_z"></label>
       <label>&ge; %<input type="number" step="0.5" id="run_pct"></label>
     </fieldset>
+    <fieldset><legend title="A sharp move against the trend that leaves the trend intact (close still on the trend side of the 50-day SMA)">Big move, trend intact</legend>
+      <label>&ge; &sigma;<input type="number" step="0.1" id="hold_z"></label>
+      <label>&ge; %<input type="number" step="0.5" id="hold_pct"></label>
+    </fieldset>
     <fieldset><legend>Show</legend>
       <label class="ck"><input type="checkbox" id="f_BIG" checked>Big</label>
       <label class="ck"><input type="checkbox" id="f_STREAK" checked>Streak</label>
       <label class="ck"><input type="checkbox" id="f_RUN" checked>Run</label>
+      <label class="ck"><input type="checkbox" id="f_HOLD" checked>Trend hold</label>
       <label>Direction<select id="dirf"><option value="0">Up &amp; down</option><option value="1">Up only</option><option value="-1">Down only</option></select></label>
       <label>Sector<select id="sector"><option value="">All</option></select></label>
       <label>Min cap $B<input type="number" step="1" id="mincap"></label>
@@ -142,7 +148,7 @@ svg.spark{vertical-align:middle}
 const SIG = '<span style="text-transform:none">&sigma;</span>';
 let D = null, sortKey = 'score', sortDir = -1, open = new Set();
 const $ = id => document.getElementById(id);
-const TH_KEYS = ['big_z','big_pct','streak_days','streak_pct','run_z','run_pct'];
+const TH_KEYS = ['big_z','big_pct','streak_days','streak_pct','run_z','run_pct','hold_z','hold_pct'];
 
 function fmt(v, d=1, plus=false){ if(v===null||v===undefined||isNaN(v)) return '&ndash;'; const s=Number(v).toFixed(d); return (plus&&v>0?'+':'')+s; }
 function pct(v, d=1){ return v==null ? '&ndash;' : `<span class="${v>0?'up':v<0?'dn':''}">${fmt(v*100,d,true)}%</span>`; }
@@ -155,12 +161,15 @@ function evaluate(s, t){
   const big = Math.abs(s.z1)>=t.big_z && Math.abs(s.ret1)*100>=t.big_pct;
   const streak = Math.abs(s.streak)>=t.streak_days && Math.abs(s.streak_ret)*100>=t.streak_pct;
   const runW = D.settings.run_windows.filter(w => Math.abs(s['run'+w+'_z'])>=t.run_z && Math.abs(s['run'+w])*100>=t.run_pct);
+  const hold = !!s.trend && Math.abs(s.hold_z)>=t.hold_z && Math.abs(s.hold_ret)*100>=t.hold_pct;
   const fired=[]; let score=0;
+  if(hold){ fired.push('HOLD'); score+=Math.abs(s.hold_z)/t.hold_z; }
   if(big){ fired.push('BIG'); score+=Math.abs(s.z1)/t.big_z; }
   if(streak){ fired.push('STREAK'); score+=Math.abs(s.streak)/t.streak_days; }
   if(runW.length){ fired.push('RUN'); score+=Math.max(...runW.map(w=>Math.abs(s['run'+w+'_z'])))/t.run_z; }
   let d;
-  if(runW.length){ const w=runW.reduce((a,b)=>Math.abs(s['run'+b+'_z'])>Math.abs(s['run'+a+'_z'])?b:a); d=s['run'+w]>0?1:-1; }
+  if(hold) d=s.hold_ret>0?1:-1;
+  else if(runW.length){ const w=runW.reduce((a,b)=>Math.abs(s['run'+b+'_z'])>Math.abs(s['run'+a+'_z'])?b:a); d=s['run'+w]>0?1:-1; }
   else if(streak) d=s.streak>0?1:-1; else d=s.ret1>0?1:-1;
   return {fired, score:Math.round(score*100)/100, dir:d};
 }
@@ -177,6 +186,15 @@ function legsFor(s, dir){
   const fade = dir>0 ? 'call' : 'put', mom = dir>0 ? 'put' : 'call';
   if(side==='both') return ['put','call'];
   return [side==='fade'?fade:mom];
+}
+
+function trendHtml(s){
+  if(s.trend==null) return '<span class="mut">&ndash;</span>';
+  const ma=D.settings.trend_ma||50;
+  const head = s.trend ? `<span class="${s.trend>0?'up':'dn'}">${s.trend>0?'&#9650; up':'&#9660; down'}</span> <span class="mut">${fmt(s.ma_gap*100,1,true)}% vs ${ma}D</span>`
+                       : `<span class="mut">no trend (${fmt(s.ma_gap*100,1,true)}% vs ${ma}D)</span>`;
+  const pb = s.trend && s.hold_days ? `<span class="nm">${fmt(s.hold_ret*100,1,true)}% in ${s.hold_days}d (${fmt(s.hold_z,1,true)}${SIG}) off the ${s.trend>0?'high':'low'}</span>` : '';
+  return head+pb;
 }
 
 function earnBefore(s){ const o=s.opt||{}; return !!(s.earn_next && o.exp && s.earn_next<=o.exp); }
@@ -202,6 +220,7 @@ const COLS = [
   {k:'streak', t:'Streak'},
   {k:'run10', t:'2W %'},
   {k:'run15', t:'3W % ('+SIG+')'},
+  {k:'trend', t:'Trend / pullback', l:1},
   {k:'seen', t:'Flagged /10d'},
   {k:'iv30', t:'IV30 / HV20'},
   {k:'earn_next', t:'Earnings', l:1},
@@ -211,6 +230,7 @@ const COLS = [
 function sortVal(s, k){
   if(k==='iv30') return (s.opt&&s.opt.iv_hv)||0;
   if(k==='seen') return (D.seen||{})[s.ticker]||0;
+  if(k==='trend') return s.trend ? Math.abs(s.hold_z||0) : -1;
   if(['ret1','streak','run10','run15'].includes(k)) return Math.abs(s[k]);
   return s[k] ?? '';
 }
@@ -218,7 +238,7 @@ function sortVal(s, k){
 function render(){
   if(!D) return;
   const t=th(), dirf=+$('dirf').value, sec=$('sector').value, minc=parseFloat($('mincap').value||0)*1e9;
-  const types=['BIG','STREAK','RUN'].filter(x=>$('f_'+x).checked), q=$('q').value.trim().toUpperCase();
+  const types=['BIG','STREAK','RUN','HOLD'].filter(x=>$('f_'+x).checked), q=$('q').value.trim().toUpperCase();
   const below = TH_KEYS.some(k => t[k] < D.prescreen[k]);
   let rows=[];
   for(const s of D.rows){
@@ -253,6 +273,7 @@ function render(){
       <td><span class="${s.streak>0?'up':'dn'}">${s.streak>0?'+':''}${s.streak}d</span> <span class="mut">${fmt(s.streak_ret*100,1,true)}%</span></td>
       <td>${pct(s.run10)}</td>
       <td>${pct(s.run15)} <span class="mut">(${fmt(s.run15_z,1,true)})</span></td>
+      <td class="l">${trendHtml(s)}</td>
       <td>${seen?seen:'<span class="mut">new</span>'}</td>
       <td>${o.iv30!=null?fmt(o.iv30,0):'&ndash;'} <span class="mut">/ ${fmt(s.hv20*100,0)}</span>${o.iv_hv!=null?` <span class="${o.iv_hv>=1.2?'up':o.iv_hv<0.9?'dn':'mut'}">${fmt(o.iv_hv,2)}x</span>`:''}</td>
       <td class="l">${earn||'<span class="mut">&ndash;</span>'}</td>
@@ -263,7 +284,7 @@ function render(){
   $('tbl').querySelector('tbody').innerHTML = tb.join('') || `<tr><td colspan="${COLS.length}" class="empty">No names pass these thresholds.</td></tr>`;
   $('note').innerHTML = `${rows.length} names shown of ${D.rows.length} eligible. `
     + (below ? `<b>Some thresholds are looser than the prescreen</b> (option chains are only pulled for names passing ${TH_KEYS.map(k=>D.prescreen[k]).join(' / ')}), so extra names show without a strike. `:'')
-    + `Fade = sell the call after an up move, the put after a down move. Strike = OTM option with |&Delta;| nearest ${D.settings.target_delta}; expiry = the most open interest with ${D.settings.dte[0]}&ndash;${D.settings.dte[1]} days to run. Green dot = OI &ge; ${D.settings.min_oi}, bid &ge; $${D.settings.min_bid}, spread &le; ${D.settings.max_spread}% of mid. Premium % is on the strike for puts and on spot for calls. Run ${SIG} = cumulative log move / (60-day daily ${SIG} &times; &radic;n). Cboe option quotes are 15-min delayed.`;
+    + `Trend hold = a move of &ge; ${t.hold_z}${SIG}&radic;k and &ge; ${t.hold_pct}% against the trend, off the extreme close of the last ${D.settings.hold_lookback||5} sessions (k = days since it), while the trend still holds: close on the trend side of the ${D.settings.trend_ma||50}-day SMA, that SMA still sloping the same way over ${D.settings.trend_slope_days||10} sessions, ${D.settings.trend_fast_ma||20}-day SMA on the same side. Its direction leads, so fade sells the put after a dip in an uptrend. Fade = sell the call after an up move, the put after a down move. Strike = OTM option with |&Delta;| nearest ${D.settings.target_delta}; expiry = the most open interest with ${D.settings.dte[0]}&ndash;${D.settings.dte[1]} days to run. Green dot = OI &ge; ${D.settings.min_oi}, bid &ge; $${D.settings.min_bid}, spread &le; ${D.settings.max_spread}% of mid. Premium % is on the strike for puts and on spot for calls. Run ${SIG} = cumulative log move / (60-day daily ${SIG} &times; &radic;n). Cboe option quotes are 15-min delayed.`;
 }
 
 function detail(s){
@@ -282,7 +303,7 @@ function detail(s){
 }
 
 function setDefaults(){
-  TH_KEYS.forEach(k=>$(k).value=D.thresholds[k]);
+  TH_KEYS.forEach(k=>$(k).value=D.thresholds[k] ?? '');
   $('mincap').value = D.settings.min_cap/1e9;
 }
 
