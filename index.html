@@ -97,7 +97,7 @@ svg.spark{vertical-align:middle}
 @media (max-width:700px){#rep .cols{grid-template-columns:1fr}}
 @media (max-width:700px){header,.wrap{padding-left:16px;padding-right:16px}}
 </style>
-<script src="site.js"></script>
+<script src="site.js?v=202610151754"></script>
 <style>#runLive,#runSettled{display:none}</style>
 </head>
 <body>
@@ -344,7 +344,7 @@ async function load(){
 let REPS=[];
 function repLine(l){
   let t=esc(l.text).replace(/([+-]\d+(?:\.\d+)?%)/g, m=>`<span class="${m[0]==='+'?'up':'dn'}">${m}</span>`);
-  for(const tk of l.tickers) t=t.replace(new RegExp('(^|[\\s,/>])'+tk.replace(/[.^$]/g,'\\$&')+'(?=[\\s,])'), `$1<a data-tk="${tk}">${tk}</a>`);
+  for(const tk of l.tickers) t=t.replace(new RegExp('(^|[\\s,/>])'+tk.replace(/[.^$]/g,'\\$&')+'(?=[\\s,;])'), `$1<a data-tk="${tk}">${tk}</a>`);
   return `<li>${l.label?`<b class="lbl">${esc(l.label)}:</b> `:''}${t}</li>`;
 }
 function renderReport(){
@@ -356,6 +356,7 @@ function renderReport(){
 }
 async function loadReports(){
   try{ REPS = await (await fetch('/api/reports',{cache:'no-store'})).json(); }catch(e){ REPS=[]; }
+  if(!Array.isArray(REPS)) REPS=[];
   $('repDate').innerHTML = REPS.map((r,i)=>`<option value="${i}">${esc(r.as_of)}</option>`).join('');
   renderReport();
 }
