@@ -124,6 +124,7 @@ window.fetch = async (url, opts) => {
   if (!u.startsWith('/api/')) return realFetch(url, opts);
   await READY;
   if (u.startsWith('/api/latest')) return json(DATA.latest);
+  if (u.startsWith('/api/reports')) return json(DATA.reports || []);
   if (u.startsWith('/api/files')) return json(DATA.xlsx ? [DATA.xlsx.name] : []);
   if (u.startsWith('/api/status')) return json({
     job: {running: false}, log: [],

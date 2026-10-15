@@ -81,6 +81,20 @@ tr.detail td{background:var(--bg);text-align:left;padding:10px 14px}
 .note{font-size:12px;color:var(--muted);margin:10px 2px 0;max-width:1100px}
 .empty{padding:30px;text-align:center;color:var(--muted)}
 svg.spark{vertical-align:middle}
+#rep{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px 12px;margin:6px 0 12px}
+#rep>summary{cursor:pointer;font-size:15px;font-weight:650;user-select:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#rep>summary .sub{font-weight:400}
+#rep .tools{margin-left:auto;display:flex;gap:6px;align-items:center}
+#rep .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 26px;margin-top:8px}
+#rep h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:10px 0 4px;font-weight:600}
+#rep h3 .n{font-weight:400}
+#rep ul{margin:0;padding-left:18px}
+#rep li{margin:3px 0;line-height:1.5}
+#rep li b.lbl{font-weight:600}
+#rep li a{color:var(--ink);font-weight:650;text-decoration:none;cursor:pointer}
+#rep li a:hover{text-decoration:underline}
+#rep .chg{font-size:12px;color:var(--muted);margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+@media (max-width:700px){#rep .cols{grid-template-columns:1fr}}
 @media (max-width:700px){header,.wrap{padding-left:16px;padding-right:16px}}
 </style>
 <script src="site.js"></script>
@@ -102,6 +116,11 @@ svg.spark{vertical-align:middle}
 <div class="wrap">
   <div class="status" id="status"></div>
   <div class="funnel" id="funnel"></div>
+
+  <details id="rep" open><summary>Daily report <span class="sub" id="repSub"></span>
+    <span class="tools" onclick="event.preventDefault()"><select id="repDate" title="Past reports"></select><button class="btn" id="repCopy">Copy text</button></span></summary>
+    <div id="repBody"><div class="mut">loading&hellip;</div></div>
+  </details>
 
   <details id="ctl" open><summary>Filters &amp; option leg</summary>
   <div class="controls">
@@ -317,9 +336,35 @@ async function load(){
   $('sector').innerHTML='<option value="">All</option>'+secs.map(s=>`<option ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
   if(!$('big_z').value) setDefaults();
   render();
+  loadReports();
   const f = await (await fetch('/api/files')).json();
   $('files').innerHTML = f.map(x=>`<option>${esc(x)}</option>`).join('') || '<option value="">no files</option>';
 }
+
+let REPS=[];
+function repLine(l){
+  let t=esc(l.text).replace(/([+-]\d+(?:\.\d+)?%)/g, m=>`<span class="${m[0]==='+'?'up':'dn'}">${m}</span>`);
+  for(const tk of l.tickers) t=t.replace(new RegExp('(^|[\\s,/>])'+tk.replace(/[.^$]/g,'\\$&')+'(?=[\\s,])'), `$1<a data-tk="${tk}">${tk}</a>`);
+  return `<li>${l.label?`<b class="lbl">${esc(l.label)}:</b> `:''}${t}</li>`;
+}
+function renderReport(){
+  const r=REPS[+$('repDate').value||0];
+  if(!r){ $('repSub').textContent=''; $('repBody').innerHTML='<div class="mut">No report yet: it is written by the next screen run.</div>'; return; }
+  $('repSub').innerHTML=`closes ${esc(r.as_of)} &middot; ${r.n_hits} hits of ${r.n_eligible} eligible`;
+  $('repBody').innerHTML=`<div class="cols">${r.sections.map(s=>`<div><h3>${esc(s.title)} <span class="n">(${s.n})</span></h3><ul>${s.lines.map(repLine).join('')}</ul></div>`).join('')}</div>`
+    + (r.prev_date?`<div class="chg"><b>New since ${esc(r.prev_date)}:</b> ${esc(r.new.join(', ')||'none')}<br><b>Dropped off:</b> ${esc(r.dropped.join(', ')||'none')}</div>`:'');
+}
+async function loadReports(){
+  try{ REPS = await (await fetch('/api/reports',{cache:'no-store'})).json(); }catch(e){ REPS=[]; }
+  $('repDate').innerHTML = REPS.map((r,i)=>`<option value="${i}">${esc(r.as_of)}</option>`).join('');
+  renderReport();
+}
+$('repDate').onchange=renderReport;
+$('repCopy').onclick=async()=>{ const r=REPS[+$('repDate').value||0]; if(!r) return;
+  try{ await navigator.clipboard.writeText(r.text); $('repCopy').textContent='Copied'; }catch(e){ $('repCopy').textContent='Copy failed'; }
+  setTimeout(()=>$('repCopy').textContent='Copy text',1500); };
+$('repBody').addEventListener('click', e=>{ const a=e.target.closest('a[data-tk]'); if(!a) return;
+  $('q').value=a.dataset.tk; open.add(a.dataset.tk); render(); $('tbl').scrollIntoView({behavior:'smooth'}); });
 
 let wasRunning=false;
 async function poll(){
