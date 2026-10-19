@@ -97,7 +97,7 @@ svg.spark{vertical-align:middle}
 @media (max-width:700px){#rep .cols{grid-template-columns:1fr}}
 @media (max-width:700px){header,.wrap{padding-left:16px;padding-right:16px}}
 </style>
-<script src="site.js?v=202610160642"></script>
+<script src="site.js?v=202610191304"></script>
 <style>#runLive,#runSettled{display:none}</style>
 </head>
 <body>
@@ -361,8 +361,23 @@ async function loadReports(){
   renderReport();
 }
 $('repDate').onchange=renderReport;
+// Rich copy: real bullets + green/red % (inline styles so they survive a paste into Teams / Outlook / Word)
+function repHtml(r){
+  const col=t=>esc(t).replace(/([+-]\d+(?:\.\d+)?%)/g, m=>`<span style="color:${m[0]==='+'?'#1a7f37':'#cf222e'}">${m}</span>`);
+  return `<div style="font-family:Calibri,Arial,sans-serif">` + r.sections.map(s=>
+    `<p>${esc(s.title)}:</p><ul>${s.lines.map(l=>`<li>${l.label?esc(l.label)+': ':''}${col(l.text)}</li>`).join('')}</ul>`).join('') + `</div>`;
+}
 $('repCopy').onclick=async()=>{ const r=REPS[+$('repDate').value||0]; if(!r) return;
-  try{ await navigator.clipboard.writeText(r.text); $('repCopy').textContent='Copied'; }catch(e){ $('repCopy').textContent='Copy failed'; }
+  try{
+    if(window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([repHtml(r)],{type:'text/html'}), 'text/plain': new Blob([r.text],{type:'text/plain'})})]);
+    else await navigator.clipboard.writeText(r.text);
+    $('repCopy').textContent='Copied';
+  }catch(e){  // clipboard API blocked: select a rendered copy and use the legacy copy command (keeps bullets + colour)
+    const d=document.createElement('div'); d.innerHTML=repHtml(r); d.style.cssText='position:fixed;left:-9999px;top:0;color:#000;background:#fff';
+    document.body.appendChild(d); const sel=getSelection(); sel.removeAllRanges(); const rg=document.createRange(); rg.selectNodeContents(d); sel.addRange(rg);
+    const ok=document.execCommand('copy'); sel.removeAllRanges(); d.remove();
+    $('repCopy').textContent=ok?'Copied':'Copy failed'; }
   setTimeout(()=>$('repCopy').textContent='Copy text',1500); };
 $('repBody').addEventListener('click', e=>{ const a=e.target.closest('a[data-tk]'); if(!a) return;
   $('q').value=a.dataset.tk; open.add(a.dataset.tk); render(); $('tbl').scrollIntoView({behavior:'smooth'}); });
